@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# bin/compile <build-dir> <cache-dir> <env-dir>
+
+START_TIME=$SECONDS
+
+set -o errexit
+set -o pipefail
+unset GIT_DIR
+
+# Configure directories
+BUILD_DIR=${1:-}
+CACHE_DIR=${2:-}
+ENV_DIR=${3:-}
+BP_DIR=$(cd $(dirname ${0:-}); cd ..; pwd)
+NUMBER=$(date +%s)
+TARGET_SCRATCH_ORG_ALIAS="scratch-$NUMBER"
+
+# Import dependencies
+source $BP_DIR/lib/lib.sh
+source $BP_DIR/lib/deps.sh
+source $BP_DIR/lib/sfdc.sh
+
+# Prepare environment
+setup_dirs() {
+  export PATH="$BUILD_DIR/vendor/sfdx/cli/bin:$PATH"
+  export PATH="$BUILD_DIR/vendor/sfdx/jq:$PATH"
+  export PATH="$BUILD_DIR/vendor/node:$PATH"
+}
+
+export_env_dir() {
+  if [ -d "$ENV_DIR" ]; then
+    for e in $(ls $ENV_DIR); do
+      export $e=$(cat $ENV_DIR/$e)
+      :
+    done
+  fi
+}
+
+# SFDC processes
+deploy_to_scratch() {
+
+  RESPONSE_DEV_HUB=$(make_soap_request \
+    "$DEV_HUB_USERNAME" \
+    "$DEV_HUB_PASSWORD" \
+    "$DEV_HUB_TOKEN" \
+    "false")
+
+  DEV_HUB_SESSION_ID=$(get_session_id \
+    "$RESPONSE_DEV_HUB")
+
+  DEV_HUB_INSTANCE_URL=$(get_instance_url \
+    "$RESPONSE_DEV_HUB")
+
+  prepare_sfdc_environment \
+    "$DEV_HUB_INSTANCE_URL" \
+    "$DEV_HUB_SESSION_ID"
+
+  check_package_on_devhub \
+    "$DEV_HUB_SESSION_ID" \
+    "$SFDX_PACKAGE_NAME"
+
+  sfdx_create_scratch \
+    "$DEV_HUB_SESSION_ID" \
+    "$TARGET_SCRATCH_ORG_ALIAS"
+
+  sfdx_source_push \
+    "$TARGET_SCRATCH_ORG_ALIAS" \
+    "$DEV_HUB_SESSION_ID"
+
+  sfdx_run_test \
+    "$TARGET_SCRATCH_ORG_ALIAS" \
+    "$DEV_HUB_SESSION_ID"
+
+  sfdx_delete_scratch \
+    "$TARGET_SCRATCH_ORG_ALIAS" \
+    "$DEV_HUB_SESSION_ID"
+
+}
+
+install_package() {
+
+  RESPONSE_DEV_HUB=$(make_soap_request \
+    "$DEV_HUB_USERNAME" \
+    "$DEV_HUB_PASSWORD" \
+    "$DEV_HUB_TOKEN" \
+    "false")
+
+  DEV_HUB_SESSION_ID=$(get_session_id \
+    "$RESPONSE_DEV_HUB")
+
+  DEV_HUB_INSTANCE_URL=$(get_instance_url \
+    "$RESPONSE_DEV_HUB")
+
+  RESPONSE_SF_ORG=$(make_soap_request \
+    "$SF_ORG_USERNAME" \
+    "$SF_ORG_PASSWORD" \
+    "$SF_ORG_TOKEN" \
+    "$SF_ORG_IS_SANDBOX")
+
+  SF_ORG_SESSION_ID=$(get_session_id \
+    "$RESPONSE_SF_ORG")
+
+  SF_ORG_INSTANCE_URL=$(get_instance_url \
+    "$RESPONSE_SF_ORG")
+
+  prepare_sfdc_environment \
+    "$DEV_HUB_INSTANCE_URL" \
+    "$DEV_HUB_SESSION_ID"
+
+  install_package_version \
+    "$SFDX_PACKAGE_NAME" \
+    "$DEV_HUB_SESSION_ID" \
+    "$SF_ORG_SESSION_ID" \
+    "$SF_ORG_INSTANCE_URL" \
+    "$DEV_HUB_INSTANCE_URL"
+
+}
+
+run_code_analysis() {
+
+  install_isvte_plugin
+
+  prepare_metadata_format $BUILD_DIR
+
+  run_analysis
+
+}
+
+header 'Welcome to aquiva-sfdx-buildpack!'
+
+# Repository validations
+log "Verifying files ..."
+verify_project_file $BUILD_DIR
+
+log "Setting up paths ..."
+setup_dirs
+
+log "Starting CLI installation ..."
+install_sfdx_cli $BUILD_DIR
+
+log "Starting jq installation ..."
+install_jq $BUILD_DIR
+
+log "Starting node installation ..."
+install_node $BUILD_DIR
+
+log "Setup enviroment variables ..."
+export_env_dir
+
+# Create .profile.d folder
+mkdir -p $BUILD_DIR/.profile.d
+
+# if no .profile.d/path.sh, create one
+if [ ! -f $BUILD_DIR/.profile.d/path.sh ]; then
+  log "Creating path.sh ..."
+  echo "echo \"Updating PATH to include Salesforce CLI ...\"
+  export PATH=\$PATH:/app/vendor/sfdx/cli/bin/" > $BUILD_DIR/.profile.d/path.sh
+
+  log "Generated $BUILD_DIR/.profile.d/path.sh to add CLI path"
+fi
+
+cd "$BUILD_DIR"
+
+# Deploy on QA org
+if [ "$STAGE" == "DEV" ]; then
+  header "QA org deploy ..."
+
+  deploy_to_scratch
+
+  install_package
+
+  run_code_analysis
+
+fi
+
+# Deploy on Staging org
+if [ "$STAGE" == "STAGING" ]; then
+  header "Staging org deploy ..."
+
+  deploy_to_scratch
+
+  install_package
+
+fi
+
+header "DONE! Completed in $(($SECONDS - $START_TIME))s"
+exit 0
