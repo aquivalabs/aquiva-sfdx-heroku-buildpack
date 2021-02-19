@@ -87,16 +87,22 @@ create_package() {
       | select(.default==true)
       | .path')"
 
-  if [ ! "$STAGE" == "DEV" ]; then
-    NEW_PROJECT_FILE="$(jq -r --arg NAMESPACE "$PACKAGE_NAMESPACE" '.namespace=$NAMESPACE' sfdx-project.json)"
-    echo "$NEW_PROJECT_FILE" > "./sfdx-project.json"
-  fi
-
   sfdx force:package:create \
     -r "$PACKAGE_PATH" \
     -n "$PACKAGE_NAME" \
     -t "$PACKAGE_TYPE" \
     -v "$USERNAME"
+}
+
+set_package_namespace() {
+  if [ "$STAGE" == "DEV" ]; then
+    NAMESPACE=""
+  else
+    NAMESPACE="$PACKAGE_NAMESPACE"
+  fi
+
+  NEW_PROJECT_FILE="$(jq -r --arg NAMESPACE "$NAMESPACE" '.namespace=$NAMESPACE' sfdx-project.json)"
+  echo "$NEW_PROJECT_FILE" > "./sfdx-project.json"
 }
 
 # Validation if the package exists on Dev Hub
@@ -118,6 +124,7 @@ check_package_on_devhub() {
 
   if [ -z "$IS_PACKAGE_EXISTS" ]; then
     log "Creating package on Dev Hub ..."
+    set_package_namespace
     create_package \
       "$PACKAGE_NAME" \
       "$PACKAGE_TYPE" \
@@ -322,7 +329,7 @@ prepare_metadata_format() {
     jq -r '.packageDirectories[]
       | select(.default==true)
       | .path')"
-  
+
   if [[ -z "$PACKAGE_PATH" ]]; then echo "Project folder was not found" && exit 0; fi;
 
   if [[ ! -f "$BUILD_DIR/$PACKAGE_PATH/package.xml" ]]; then
