@@ -233,8 +233,10 @@ install_package_version() {
   log "Creating new Package Version"
   log "This may take some time ..."
 
+  VERSION_NAME="version $(sed 's/\.NEXT$//' <<< "$VERSION_NUMBER")"
   COMMAND_CREATE="sfdx force:package:version:create \
     -p $SFDX_PACKAGE_NAME \
+    --versionname '$VERSION_NAME' \
     -n $VERSION_NUMBER \
     -v $DEVHUB_USERNAME \
     -w 100 \
