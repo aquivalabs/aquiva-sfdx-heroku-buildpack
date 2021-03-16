@@ -244,7 +244,7 @@ install_package_version() {
     COMMAND_CREATE="${COMMAND_CREATE} -c"
   fi
 
-  CREATE_RESULT="$(eval $COMMAND_CREATE)"
+  CREATE_RESULT="$($COMMAND_CREATE)"
   echo "$CREATE_RESULT"
 
   PACKAGE_VERSION_ID="$(jq -r '.result.SubscriberPackageVersionId' <<< "$CREATE_RESULT")"
