@@ -238,7 +238,7 @@ install_package_version() {
     -n $VERSION_NUMBER \
     -v $DEVHUB_USERNAME \
     -w 100 \
-    --json -x "
+    -x "
 
   if [ ! "$STAGE" == "DEV" ]; then
     COMMAND_CREATE="${COMMAND_CREATE}-c"
