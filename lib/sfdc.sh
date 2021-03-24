@@ -212,11 +212,11 @@ install_package_version() {
   TARGET_INSTANCE_URL=${4:-}
   DEV_HUB_INSTANCE_URL=${5:-}
 
-  VERSION_NUMBER=$(get_package_version $SFDX_PACKAGE_NAME $DEVHUB_USERNAME)
+  VERSION_NUMBER=$(get_package_version "$SFDX_PACKAGE_NAME" $DEVHUB_USERNAME)
   log "New Package Version: $VERSION_NUMBER"
   LATEST_VERSION="$(eval sfdx force:package:version:list \
     -v $DEVHUB_USERNAME \
-    -p $SFDX_PACKAGE_NAME \
+    -p \'$SFDX_PACKAGE_NAME\' \
     --concise \
     --json |
     jq -r '.result
@@ -233,8 +233,10 @@ install_package_version() {
   log "Creating new Package Version"
   log "This may take some time ..."
 
+  VERSION_NAME="version $(sed 's/\.NEXT$//' <<< "$VERSION_NUMBER")"
   COMMAND_CREATE="sfdx force:package:version:create \
-    -p $SFDX_PACKAGE_NAME \
+    -p '$SFDX_PACKAGE_NAME' \
+    --versionname '$VERSION_NAME' \
     -n $VERSION_NUMBER \
     -v $DEVHUB_USERNAME \
     -w 100 \
@@ -297,7 +299,7 @@ get_package_version() {
 
   PACKAGE_VERSION_JSON="$(eval sfdx force:package:version:list \
     -v $DEVHUB_USERNAME \
-    -p $SFDX_PACKAGE_NAME \
+    -p \'$SFDX_PACKAGE_NAME\' \
     --concise \
     --json |
     jq '.result | sort_by(-.MajorVersion, -.MinorVersion, -.PatchVersion, -.BuildNumber) | .[0] // ""')"
